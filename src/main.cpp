@@ -7,27 +7,39 @@
 
 int main()
 {
-	double winSize = 800;//pixels
-	double worldSize = 100;//meters
-	double scale = winSize / worldSize;
 
-	int nParticles = 5000;
+	//-----INPUT SECTION-----//
+	double winSize = 800;//pixels
+	double worldSize = 10;//meters
+	double fps = 1500;
+	int nVertices = 10;
+
+	double radius = 0.12;
+	int nParticles = 500;
 	double particleMass = 1;
 	double attraction = 1;// TODO : IMPLEMENT
-	double boxSizeX = 100;
-	double boxSizeY = 100;
+	
+	double boxSizeX = 9;
+	double boxSizeY = 9;
 
-	double xPosMin = -42;
-	double xPosMax = 42;
-	double yPosMin = -42;
-	double yPosMax = 42;
+	double xPosMin = -4;
+	double xPosMax = 4;
+	double yPosMin = -4;
+	double yPosMax = 4;
 
 	double biasVelX = 0;
 	double biasVelY = 0;
-	double absMaxRandVel =0;
+	double absMaxRandVel = 1;
+	//-----END OF INPUT SECTION-----//
 
+	//Pixels per meter
+	double scale = winSize / worldSize;
+
+	//Matrix of particle positions and velocities
 	LinMat pos(nParticles, 2);
 	LinMat vel(nParticles, 2);
+
+	//Generete initial states for particles
 	createInitPos(pos, xPosMin, xPosMax, yPosMin, yPosMax);
 	createInitVel(vel, biasVelX, biasVelY, absMaxRandVel);
 
@@ -39,20 +51,15 @@ int main()
 		sortedY[i] = i;
 	}
 
-
-	double radius = 0.6;
-
-	double fps = 50;
 	double dt = 1 / fps;
-	double t = 0;
-
-	std::chrono::system_clock::time_point start, stop;
-	std::chrono::duration<double> time_span;
 	double diff;
 	int margin;
+	std::chrono::system_clock::time_point start, stop;
+	std::chrono::duration<double> time_span;
+
 
 	sf::RenderWindow window(sf::VideoMode(winSize, winSize), "MolecularCFD");
-	sf::CircleShape particle(radius*scale, 10);
+	sf::CircleShape particle(radius*scale, nVertices);
 	particle.setFillColor(sf::Color::Blue);
 	sf::Vertex line1[] =
 	{
@@ -85,12 +92,13 @@ int main()
 		sf::Vertex(sf::Vector2f(winSize / 2, 50 +winSize / 2))
 	};
 
-	int k;
+	//TEMP FOR DEBUG PURPOSES
 	std::vector<double> test;
 	for (int i = 0; i < nParticles; i++) {
 		test.push_back(0);
 	}
 	
+	//MAIN LOOP
 	while (window.isOpen())
 	{
 		sf::Event event;
@@ -101,86 +109,37 @@ int main()
 		}
 
 		start = std::chrono::high_resolution_clock::now();
-
 		window.clear();
 
+		//Sort after position
 		insertion_sort(pos, sortedX, 0);
 		insertion_sort(pos, sortedY, 1);
+
+		//Reset collided array
 		for (int i = 0; i < nParticles; i++) {
 			collided[i] = false;
-			test[i] = pos.get(pos.index(sortedX[i], 0));
 		}
 
 		//resolve collisions
-		resolveCollisions(pos, vel, collided, sortedX, radius);
-		k = 0;
-		while (k < nParticles && pos.get(pos.index(sortedX[k], 0)) < (-(boxSizeX) / 2 + radius)){
-		if (!collided[sortedX[k]]) {
-			vel.set(pos.index(sortedX[k], 0), -0.95*vel.get(pos.index(sortedX[k], 0)));
-			pos.set(pos.index(sortedX[k], 0), -(boxSizeX) / 2 + radius);
-			collided[sortedX[k]] = true;
+		interMolecularCollisions(pos, vel, collided, sortedX, radius);
+		boundaryCollisions(pos, vel, boxSizeX, boxSizeY, radius, sortedX, sortedY, collided);
 
-		}
-		k++;
-	}
+		//State integration
+		integrateStates(pos, vel, dt);
 
-		k = nParticles - 1;
-		while (k != 0 && pos.get(pos.index(sortedX[k], 0)) > ((boxSizeX) / 2 - radius)){
-			if (!collided[sortedX[k]]) {
-				vel.set(pos.index(sortedX[k], 0), -0.95*vel.get(pos.index(sortedX[k], 0)));
-				pos.set(pos.index(sortedX[k], 0), (boxSizeX)/2 - radius);
-				collided[sortedX[k]] = true;
-
-			}
-			k--;
-		}
-		
-
-		k = 0;
-		while (k < nParticles && pos.get(pos.index(sortedY[k], 1)) < (-(boxSizeY) / 2 + radius)){
-			if (!collided[sortedY[k]]) {
-				vel.set(pos.index(sortedY[k], 1), -0.95*vel.get(pos.index(sortedY[k], 1)));
-				pos.set(pos.index(sortedY[k], 1), -(boxSizeY) / 2 + radius);
-				collided[sortedY[k]] = true;
-
-			}
-			k++;
-		}
-		k = nParticles-1;
-		while (k != 0 && pos.get(pos.index(sortedY[k], 1)) > ((boxSizeY) / 2 - radius)){
-			if (!collided[sortedY[k]]) {
-				vel.set(pos.index(sortedY[k], 1), -0.95*vel.get(pos.index(sortedY[k], 1)));
-				pos.set(pos.index(sortedY[k], 1), (boxSizeY) / 2 - radius);
-				collided[sortedY[k]] = true;
-
-			}
-			k--;
-		}
-
-		int ind;
-
-		for (int i = 0; i < nParticles; i++) {
-			ind = pos.index(i, 0);
-			vel.set(ind + 1, vel.get(ind + 1) - 98.1*dt);
-			vel.set(ind, vel.get(ind));
-			pos.set(ind, pos.get(ind) + dt*vel.get(ind));
-			pos.set(ind+1, pos.get(ind+1) + dt*vel.get(ind+1));
-		}
-
-		//draw shapes
+		//Rendering
 		/*window.draw(line1, 2, sf::Lines);
 		window.draw(line2, 2, sf::Lines);
 		window.draw(line3, 2, sf::Lines);
 		window.draw(line4, 2, sf::Lines);*/
 		window.draw(xAxis, 2, sf::Lines);
 		window.draw(yAxis, 2, sf::Lines);
-
 		for (int i = 0; i < nParticles; i++) {
 			particle.setPosition(scale*(pos.get((pos.index(i,0)))-radius)+winSize/2, -scale*(pos.get((pos.index(i,1)))+radius)+winSize/2);
 			window.draw(particle);
 		}
-
 		window.display();
+
 		stop = std::chrono::high_resolution_clock::now();
 		time_span = std::chrono::duration_cast<std::chrono::duration<double>>(stop - start);
 		diff = time_span.count();
@@ -188,7 +147,6 @@ int main()
 			margin = 1e9*(dt - diff);
 			std::this_thread::sleep_for(std::chrono::nanoseconds(margin));
 		}
-		t+=dt;
 	}
 
 	return 0;
